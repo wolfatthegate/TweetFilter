@@ -7,8 +7,8 @@ import preprocessor
 from nltk.stem.wordnet import WordNetLemmatizer
 from fuzzywuzzy import fuzz
 
-basepath = 'data/tweets/2019/03-week-1'
-output_basepath = 'data/lyrics_filter/2019/03-week-1'
+basepath = 'data/tweets/2019/test/'
+output_basepath = 'data/filtered_lyrics/2019/test/'
 
 # setup the logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s: %(levelname)s: %(message)s')
