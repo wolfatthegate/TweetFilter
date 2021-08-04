@@ -1,23 +1,52 @@
+'''
+This is Han's Tweet filtering program 
+to filter Tweets from 2014-2017 on Titan server 
+
+-Waylon 
+
+'''
+
 import json
-import os
+import os, sys
+import tarfile, gzip
+import codecs
 import re
 import logging
+import numpy as np
+
+from time import time
+from datetime import timedelta, date
+from multiprocessing import Pool
+from multiprocessing import Process, Manager
+import traceback
+import numpy as np
+import pandas as pd
+
 import preprocessor
 
 from nltk.stem.wordnet import WordNetLemmatizer
+from nltk.corpus import wordnet
+from nltk import pos_tag
+
 from fuzzywuzzy import fuzz
 
-basepath = 'data/tweets/2019/test/'
-output_basepath = 'data/filtered_lyrics/2019/test/'
+import multiprocessing_logging
+
+# from filelock import Timeout, FileLock
+
+basepath = '2015-10/'
+output_basepath = 'drug_tweets_stage3/2015-10/'
+year = 2015
 
 # setup the logger
-logging.basicConfig(level=logging.INFO, format='%(asctime)s: %(levelname)s: %(message)s')
-# multiprocessing_logging.install_mp_handler()
+logging.basicConfig(level=logging.INFO,
+										format='%(asctime)s: %(levelname)s: %(message)s')
+multiprocessing_logging.install_mp_handler()
 
 def load_process_keywords():
 	lmtzr = WordNetLemmatizer()
 	with open('DrugsKeywords.txt', 'r', encoding='utf-8') as inf:
-		lines = inf.read().split('\n')
+		lines = inf.readlines()
 	word_set = set()
 	word_set_short = set()
 	for line in lines:
@@ -48,8 +77,13 @@ def compile_re():
 # =============================================
 
 def filter_tweet(tweet, word_set, word_set_short, stopwords, html_re, space_replace_re):
-
-	text = tweet['text']
+	if tweet['lang'] != 'en' and tweet['lang'] != 'und':
+		# print(t['lang'])
+		return False
+	if 'extended_tweet' in tweet:
+		text = tweet['extended_tweet']['full_text']
+	else:
+		text = tweet['text']
 	# remove html elements
 	text = html_re.sub(' ', text)
 	# tokenize
@@ -82,36 +116,46 @@ def filter_tweet(tweet, word_set, word_set_short, stopwords, html_re, space_repl
 	return match
 
 # worker process that filter tweets
-def filter_data(path, out_path, word_set, word_set_short, stopwords):
+def filter_data(path, out_path, word_set, word_set_short, stopwords, year):
 	# TODO: add count of raw tweets
 	html_compiled, space_replace_compiled = compile_re()
 
+	raw_lines = []
 	out_list = []
-	x = 0 
-	with open(path, 'r') as raw_lines:
-		for tweet_str in raw_lines:
-			try:
-				tweet = json.loads(tweet_str)
-				flag = filter_tweet(tweet, word_set, word_set_short, stopwords, 
-											html_compiled, space_replace_compiled)
-				if flag:
-					out_list.append(tweet_str)
-				x += 1
-			except:
-				logging.error("pid: {}, error processing file: {}".format(os.getpid(), path))
-				continue
-			
-			if x % 10000 == 0: 
-				logging.info('{} - scanned'.format(x)) 
+	try:
+		if str(year) == '2017':
+			tar = tarfile.open(path, mode='r:gz')
+			names = tar.getnames()
+			raw_lines = tar.extractfile(names[0]).readlines()
+		else:
+			raw_lines = gzip.open(path).readlines()
+	except:
+		logging.error("pid: {}, error opening file: {}".format(os.getpid(), path))
+		return
+
+	for l in raw_lines:
+		try:
+			tweet_str = codecs.decode(l)
+			tweet = json.loads(tweet_str)
+			flag = filter_tweet(tweet, 
+													word_set, word_set_short, stopwords, 
+													html_compiled, space_replace_compiled)
+			if flag:
+				out_list.append(tweet_str)
+		except:
+			logging.error("pid: {}, error processing file: {}".format(os.getpid(), path))
+			continue
+	
 	# output the results
 	with open(out_path, 'w', encoding='utf-8') as outf:
 		outf.writelines(out_list)
 	logging.info('File {} filter done with {} tweets filtered'.format(path, len(out_list)))
 
 # calls each process
-def filter_all_lyric(base_path, output_basepath, debug=True):
+def filter_all_lyrics(base_path, output_basepath, year, debug=True):
 	# prepare path
-
+	# base_path = base_path.format(year)
+	# output_basepath = output_basepath.format(year)
 	if not os.path.isdir(output_basepath):
 		os.mkdir(output_basepath)
 
@@ -127,13 +171,18 @@ def filter_all_lyric(base_path, output_basepath, debug=True):
 	stopwords.add('url')
 	stopwords.add('emoji')
 
+	filtered_files_list = []
+	with open("custom_stopwords2.txt", 'r', encoding='utf-8') as filteredfiles:
+		filtered_files_list.append(filteredfiles.readlines())
+		
 	# prepare path list
 	files = os.listdir(base_path)
 	input_path_list = []
 	output_path_list = []
 	for f in files:
-		input_path_list.append(os.path.join(base_path, f))
-		output_path_list.append(os.path.join(output_basepath, f.split('.')[0] + '_filtered.json'))
+		if f not in filtered_files_list: 
+			input_path_list.append(os.path.join(base_path, f))
+			output_path_list.append(os.path.join(output_basepath, f.split('.')[0] + '.json'))
 
 	if debug:
 		input_path_list = input_path_list[0:10]
@@ -143,22 +192,16 @@ def filter_all_lyric(base_path, output_basepath, debug=True):
 	logging.info('input path list: {}'.format(str(input_path_list)))
 	logging.info('output path list: {}'.format(str(output_path_list)))
 	
-	for i in range(len(input_path_list)): 
-		filter_data(input_path_list[i], output_path_list[i], word_set, word_set_short, stopwords)
-	
-	'''
-	# MULTI-PROCESS USE THIS CODE
 	# build param list
-	param_list = [(input_path_list[i], output_path_list[i], word_set, word_set_short, stopwords) for i in range(len(input_path_list))]
+	param_list = [(input_path_list[i], output_path_list[i], word_set, word_set_short, stopwords, year) for i in range(len(input_path_list))]
 
 	# do multi-process
-	with Pool(processes=2) as pool:
+	with Pool(processes=20) as pool:
 		pool.starmap(filter_data, param_list)
-	'''
-	
+
 	return
 
 if __name__ == '__main__':
 	# import_keywords()
 	# logging.info('Main process: {} started'.format(os.getpid()))
-	filter_all_lyric(basepath, output_basepath, debug=False)
+	filter_all_lyrics(basepath, output_basepath, year, debug=False)
