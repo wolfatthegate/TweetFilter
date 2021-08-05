@@ -172,8 +172,9 @@ def filter_all_lyrics(base_path, output_basepath, year, debug=True):
 	stopwords.add('emoji')
 
 	filtered_files_list = []
-	with open("custom_stopwords2.txt", 'r', encoding='utf-8') as filteredfiles:
-		filtered_files_list.append(filteredfiles.readlines())
+	with open("finished_filtered.txt", 'r', encoding='utf-8') as filteredfiles:
+		lines2 = filteredfiles.readlines()
+		filtered_files_list = [line.strip() for line in lines2]
 		
 	# prepare path list
 	files = os.listdir(base_path)

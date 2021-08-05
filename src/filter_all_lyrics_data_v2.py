@@ -15,8 +15,8 @@ import preprocessor
 from nltk.stem.wordnet import WordNetLemmatizer
 from fuzzywuzzy import fuzz
 
-basepath = 'data/tweets/2019/test/'
-output_basepath = 'data/filtered_lyrics/2019/test/'
+basepath = 'data/tweets/2017-10-JF/'
+output_basepath = 'data/filtered_lyrics/2017-10-JF/'
 
 # setup the logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s: %(levelname)s: %(message)s')
@@ -135,13 +135,19 @@ def filter_all_lyrics(base_path, output_basepath, debug=True):
 	stopwords.add('url')
 	stopwords.add('emoji')
 
+	filtered_files_list = []
+	with open("finished_filtered.txt", 'r', encoding='utf-8') as filteredfiles:
+		lines2 = filteredfiles.readlines()
+		filtered_files_list = [line.strip() for line in lines2]
+		
 	# prepare path list
 	files = os.listdir(base_path)
 	input_path_list = []
 	output_path_list = []
 	for f in files:
-		input_path_list.append(os.path.join(base_path, f))
-		output_path_list.append(os.path.join(output_basepath, f.split('.')[0] + '_filtered.json'))
+		if f not in filtered_files_list:
+			input_path_list.append(os.path.join(base_path, f))
+			output_path_list.append(os.path.join(output_basepath, f.split('.')[0] + '_filtered.json'))
 
 	if debug:
 		input_path_list = input_path_list[0:10]
